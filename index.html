@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Perfil Musical — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --surface: #13131a; --surface2: #1c1c26;
+    --border: rgba(255,255,255,0.07); --accent: #7c5cfc;
+    --accent2: #fc5c8a; --accent3: #5cfcca;
+    --text: #f0eeff; --muted: rgba(240,238,255,0.45); --card-r: 16px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; overflow-x:hidden; }
+  body::before { content:''; position:fixed; top:-200px; left:-200px; width:600px; height:600px; background:radial-gradient(circle,rgba(124,92,252,0.12) 0%,transparent 70%); pointer-events:none; z-index:0; }
+  body::after { content:''; position:fixed; bottom:-100px; right:-100px; width:500px; height:500px; background:radial-gradient(circle,rgba(252,92,138,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; }
+  .wrapper { max-width:1100px; margin:0 auto; padding:2.5rem 2rem; position:relative; z-index:1; }
+  header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:2.5rem; gap:1rem; flex-wrap:wrap; }
+  .header-left h1 { font-family:'Syne',sans-serif; font-size:2rem; font-weight:800; letter-spacing:-0.03em; line-height:1.1; background:linear-gradient(135deg,#f0eeff 0%,#7c5cfc 60%,#fc5c8a 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .header-left p { font-size:13px; color:var(--muted); margin-top:6px; }
+  .refresh-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'DM Sans',sans-serif; font-size:13px; padding:10px 18px; border-radius:10px; cursor:pointer; display:flex; align-items:center; gap:8px; transition:all 0.2s; white-space:nowrap; }
+  .refresh-btn:hover { border-color:var(--accent); background:rgba(124,92,252,0.12); }
+  .refresh-btn svg { width:15px; height:15px; transition:transform 0.5s; }
+  .refresh-btn.loading svg { animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:1.5rem; }
+  .metric { background:var(--surface); border:1px solid var(--border); border-radius:var(--card-r); padding:1.25rem 1.5rem; position:relative; overflow:hidden; transition:transform 0.2s,border-color 0.2s; }
+  .metric:hover { transform:translateY(-2px); border-color:rgba(124,92,252,0.3); }
+  .metric::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:linear-gradient(90deg,var(--accent),var(--accent2)); opacity:0; transition:opacity 0.2s; }
+  .metric:hover::before { opacity:1; }
+  .metric-icon { font-size:20px; margin-bottom:10px; }
+  .metric-label { font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:6px; }
+  .metric-value { font-family:'Syne',sans-serif; font-size:2rem; font-weight:700; color:var(--text); line-height:1; }
+  .charts-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--card-r); padding:1.25rem 1.5rem; transition:border-color 0.2s; }
+  .chart-card:hover { border-color:rgba(124,92,252,0.2); }
+  .chart-card.wide { grid-column:span 2; }
+  @media(max-width:700px){ .chart-card.wide { grid-column:span 1; } }
+  .chart-title { font-family:'Syne',sans-serif; font-size:14px; font-weight:600; color:var(--text); margin-bottom:4px; }
+  .chart-sub { font-size:12px; color:var(--muted); margin-bottom:1rem; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+  .legend-dot { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
+  .chart-wrap { position:relative; width:100%; }
+  .bar-custom { display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+  .bar-row { display:flex; align-items:center; gap:10px; font-size:12px; }
+  .bar-label { width:130px; flex-shrink:0; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track { flex:1; height:8px; background:var(--surface2); border-radius:99px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:99px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
+  .bar-count { width:24px; text-align:right; color:var(--text); font-weight:500; font-size:12px; }
+  footer { text-align:center; margin-top:2.5rem; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <header>
+    <div class="header-left">
+      <h1>🎵 Perfil Musical</h1>
+      <p id="lastUpdated">Carregando dados...</p>
+    </div>
+    <button class="refresh-btn" id="refreshBtn" onclick="loadData()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+      </svg>
+      Atualizar
+    </button>
+  </header>
+
+  <div class="metrics">
+    <div class="metric"><div class="metric-icon">📊</div><div class="metric-label">Respostas</div><div class="metric-value" id="m-total">—</div></div>
+    <div class="metric"><div class="metric-icon">🎧</div><div class="metric-label">Ouvem todo dia</div><div class="metric-value" id="m-everyday">—</div></div>
+    <div class="metric"><div class="metric-icon">📚</div><div class="metric-label">Música ao estudar</div><div class="metric-value" id="m-study">—</div></div>
+    <div class="metric"><div class="metric-icon">🎤</div><div class="metric-label">Gênero top</div><div class="metric-value" id="m-genre" style="font-size:1.2rem">—</div></div>
+    <div class="metric"><div class="metric-icon">📱</div><div class="metric-label">Plataforma top</div><div class="metric-value" id="m-platform" style="font-size:1.2rem">—</div></div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="chart-card wide">
+      <div class="chart-title">Gêneros mais ouvidos</div>
+      <div class="chart-sub">O que está tocando no fone de ouvido</div>
+      <div id="chartGenreWrap" class="bar-custom"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Horas por dia</div>
+      <div class="chart-sub">Quanto tempo com música</div>
+      <div class="legend" id="legend-hours"></div>
+      <div class="chart-wrap" style="height:200px"><canvas id="chartHours" role="img" aria-label="Horas diárias ouvindo música"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Sentimento despertado</div>
+      <div class="chart-sub">O que a música provoca</div>
+      <div class="legend" id="legend-feeling"></div>
+      <div class="chart-wrap" style="height:200px"><canvas id="chartFeeling" role="img" aria-label="Sentimentos que a música desperta"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Momento do dia</div>
+      <div class="chart-sub">Quando a música está presente</div>
+      <div id="chartMomentWrap" class="bar-custom"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Gênero que representa a personalidade</div>
+      <div class="chart-sub">Identidade musical</div>
+      <div id="chartPersonWrap" class="bar-custom"></div>
+    </div>
+  </div>
+
+  <footer>Dashboard ao vivo · atualiza com o botão acima</footer>
+</div>
+
+<script>
+const SHEET_ID = '2PACX-1vRBmJwxr6jr_CXxaOTFoGXmYVNfZJFcHe1Uk4Ndtr2U_OFq6Ca-sHKCQv6UDXBb2kMuyAbqvgx2SLWz';
+const GID = '81876105';
+const BASE_URL = `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${GID}&single=true&output=csv`;
+const PROXIES = [
+  url => url,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+];
+const PALETTE = ['#7c5cfc','#fc5c8a','#5cfcca','#fcca5c','#5c9ffc','#fc7c5c','#a05cfc','#5cfca0','#fc5cca','#5cc8fc'];
+let charts = {};
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  // Normaliza headers: remove aspas, \r, e \n internos
+  const raw = lines[0];
+  const headers = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (c === ',' && !inQ) { headers.push(cur.replace(/[\r\n]/g,'').trim()); cur = ''; continue; }
+    cur += c;
+  }
+  headers.push(cur.replace(/[\r\n]/g,'').trim());
+
+  const rows = lines.slice(1).map(line => {
+    const vals = [];
+    let v = '', q = false;
+    for (let c of line) {
+      if (c === '"') { q = !q; continue; }
+      if (c === ',' && !q) { vals.push(v.trim()); v = ''; continue; }
+      v += c;
+    }
+    vals.push(v.trim());
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = vals[i] || '');
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+
+  return { headers, rows };
+}
+
+// Busca coluna pelo índice posicional (mais confiável que busca por nome)
+// Colunas do formulário (0-indexed, pulando "Carimbo de data/hora"):
+// 0: carimbo, 1: idade, 2: frequência, 3: horas/dia, 4: plataforma,
+// 5: gênero escuta, 6: estuda, 7: influencia concentração, 8: momento dia,
+// 9: sentimento, 10: gênero personalidade
+
+function colIdx(rows, idx) {
+  const map = {};
+  rows.forEach(r => {
+    const val = Object.values(r)[idx] || '';
+    val.split(',').map(v => v.trim()).filter(Boolean).forEach(v => {
+      map[v] = (map[v] || 0) + 1;
+    });
+  });
+  return map;
+}
+
+function topKey(map) {
+  return Object.entries(map).sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
+}
+
+function makeDoughnut(id, legendId, labels, data) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  const colors = labels.map((_,i) => PALETTE[i % PALETTE.length]);
+  const total = data.reduce((a,b) => a+b, 0);
+  document.getElementById(legendId).innerHTML = labels.map((l,i) =>
+    `<span class="legend-item"><span class="legend-dot" style="background:${colors[i]}"></span>${l} (${Math.round(data[i]/total*100)}%)</span>`
+  ).join('');
+  charts[id] = new Chart(document.getElementById(id), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
+    options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
+      plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)` }}}
+    }
+  });
+}
+
+function makeHorizBars(containerId, map, maxItems) {
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, maxItems||8);
+  const max = sorted[0]?.[1] || 1;
+  document.getElementById(containerId).innerHTML = sorted.map(([label,val],i) =>
+    `<div class="bar-row">
+      <div class="bar-label" title="${label}">${label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:0%;background:${PALETTE[i%PALETTE.length]}" data-pct="${Math.round(val/max*100)}"></div></div>
+      <div class="bar-count">${val}</div>
+    </div>`
+  ).join('');
+  requestAnimationFrame(() => {
+    document.querySelectorAll(`#${containerId} .bar-fill`).forEach(el => {
+      el.style.width = el.dataset.pct + '%';
+    });
+  });
+}
+
+function renderData(rows) {
+  const total = rows.length;
+  document.getElementById('m-total').textContent = total;
+
+  // col 2: frequência
+  const freq = colIdx(rows, 2);
+  const everyday = Object.entries(freq).filter(([k]) => k.toLowerCase().includes('todo')).reduce((s,[,v]) => s+v, 0);
+  document.getElementById('m-everyday').textContent = total ? Math.round(everyday/total*100)+'%' : '—';
+
+  // col 6: estuda
+  const study = colIdx(rows, 6);
+  const studyYes = Object.entries(study).filter(([k]) => k.toLowerCase().startsWith('sim')).reduce((s,[,v]) => s+v, 0);
+  document.getElementById('m-study').textContent = total ? Math.round(studyYes/total*100)+'%' : '—';
+
+  // col 5: gênero mais ouvido
+  const genre = colIdx(rows, 5);
+  document.getElementById('m-genre').textContent = topKey(genre);
+  makeHorizBars('chartGenreWrap', genre, 8);
+
+  // col 4: plataforma
+  const platforms = colIdx(rows, 4);
+  document.getElementById('m-platform').textContent = topKey(platforms);
+
+  // col 3: horas por dia
+  const hours = colIdx(rows, 3);
+  const hSorted = Object.entries(hours).sort((a,b) => b[1]-a[1]);
+  if (hSorted.length) makeDoughnut('chartHours','legend-hours', hSorted.map(e=>e[0]), hSorted.map(e=>e[1]));
+
+  // col 9: sentimento
+  const feeling = colIdx(rows, 9);
+  const fSorted = Object.entries(feeling).sort((a,b) => b[1]-a[1]);
+  if (fSorted.length) makeDoughnut('chartFeeling','legend-feeling', fSorted.map(e=>e[0]), fSorted.map(e=>e[1]));
+
+  // col 8: momento do dia
+  const moment = colIdx(rows, 8);
+  makeHorizBars('chartMomentWrap', moment, 6);
+
+  // col 10: personalidade
+  const person = colIdx(rows, 10);
+  makeHorizBars('chartPersonWrap', person, 6);
+
+  const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('lastUpdated').innerHTML = `Última atualização: <span style="color:#5cfcca">${now}</span> · ${total} resposta${total!==1?'s':''}`;
+}
+
+async function loadData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('loading');
+  document.getElementById('lastUpdated').textContent = 'Carregando...';
+
+  for (const proxy of PROXIES) {
+    try {
+      const url = proxy(BASE_URL);
+      const res = await fetch(url + (url.includes('?') && !url.includes('nocache') ? '&nocache=' : '?nocache=') + Date.now(), { cache:'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (!text.includes(',')) throw new Error('CSV inválido');
+      const { rows } = parseCSV(text);
+      renderData(rows);
+      btn.classList.remove('loading');
+      return;
+    } catch(e) {
+      console.warn('Proxy falhou:', e.message);
+    }
+  }
+
+  document.getElementById('lastUpdated').textContent = 'Erro ao carregar dados.';
+  btn.classList.remove('loading');
+}
+
+loadData();
+</script>
+</body>
+</html>
