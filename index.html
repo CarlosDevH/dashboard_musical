@@ -13,8 +13,8 @@
     --accent2: #fc5c8a; --accent3: #5cfcca;
     --text: #f0eeff; --muted: rgba(240,238,255,0.45); --card-r: 16px;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; overflow-x:hidden; }
   body::before { content:''; position:fixed; top:-200px; left:-200px; width:600px; height:600px; background:radial-gradient(circle,rgba(124,92,252,0.12) 0%,transparent 70%); pointer-events:none; z-index:0; }
   body::after { content:''; position:fixed; bottom:-100px; right:-100px; width:500px; height:500px; background:radial-gradient(circle,rgba(252,92,138,0.08) 0%,transparent 70%); pointer-events:none; z-index:0; }
   .wrapper { max-width:1100px; margin:0 auto; padding:2.5rem 2rem; position:relative; z-index:1; }
@@ -51,13 +51,11 @@
   .bar-track { flex:1; height:8px; background:var(--surface2); border-radius:99px; overflow:hidden; }
   .bar-fill { height:100%; border-radius:99px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); }
   .bar-count { width:24px; text-align:right; color:var(--text); font-weight:500; font-size:12px; }
-  .error-box { background:rgba(252,92,138,0.08); border:1px solid rgba(252,92,138,0.25); border-radius:12px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; font-size:13px; color:#fc5c8a; display:none; }
   footer { text-align:center; margin-top:2.5rem; font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
 <div class="wrapper">
-
   <header>
     <div class="header-left">
       <h1>🎵 Perfil Musical</h1>
@@ -70,8 +68,6 @@
       Atualizar
     </button>
   </header>
-
-  <div class="error-box" id="errorBox"></div>
 
   <div class="metrics">
     <div class="metric"><div class="metric-icon">📊</div><div class="metric-label">Respostas</div><div class="metric-value" id="m-total">—</div></div>
@@ -117,64 +113,71 @@
 <script>
 const SHEET_ID = '2PACX-1vRBmJwxr6jr_CXxaOTFoGXmYVNfZJFcHe1Uk4Ndtr2U_OFq6Ca-sHKCQv6UDXBb2kMuyAbqvgx2SLWz';
 const GID = '81876105';
-
-// Tenta três URLs em sequência até uma funcionar
-function buildUrls() {
-  const direct = `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${GID}&single=true&output=csv`;
-  const proxy1 = `https://corsproxy.io/?${encodeURIComponent(direct)}`;
-  const proxy2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(direct)}`;
-  return [direct, proxy1, proxy2];
-}
-
+const BASE_URL = `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${GID}&single=true&output=csv`;
+const PROXIES = [
+  url => url,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+];
 const PALETTE = ['#7c5cfc','#fc5c8a','#5cfcca','#fcca5c','#5c9ffc','#fc7c5c','#a05cfc','#5cfca0','#fc5cca','#5cc8fc'];
 let charts = {};
 
 function parseCSV(text) {
   const lines = text.trim().split('\n');
-  const headers = lines[0].split(',').map(h => h.replace(/"/g,'').replace(/[\n\r]/g,'').trim());
+  // Normaliza headers: remove aspas, \r, e \n internos
+  const raw = lines[0];
+  const headers = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (c === ',' && !inQ) { headers.push(cur.replace(/[\r\n]/g,'').trim()); cur = ''; continue; }
+    cur += c;
+  }
+  headers.push(cur.replace(/[\r\n]/g,'').trim());
+
   const rows = lines.slice(1).map(line => {
     const vals = [];
-    let cur = '', inQ = false;
+    let v = '', q = false;
     for (let c of line) {
-      if (c === '"') inQ = !inQ;
-      else if (c === ',' && !inQ) { vals.push(cur.trim()); cur = ''; }
-      else cur += c;
+      if (c === '"') { q = !q; continue; }
+      if (c === ',' && !q) { vals.push(v.trim()); v = ''; continue; }
+      v += c;
     }
-    vals.push(cur.trim());
+    vals.push(v.trim());
     const obj = {};
-    headers.forEach((h, i) => obj[h] = (vals[i]||'').replace(/"/g,'').trim());
+    headers.forEach((h, i) => obj[h] = vals[i] || '');
     return obj;
-  });
+  }).filter(r => Object.values(r).some(v => v));
+
   return { headers, rows };
 }
 
-function norm(s) {
-  return s.toLowerCase().replace(/[\n\r]/g,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-}
+// Busca coluna pelo índice posicional (mais confiável que busca por nome)
+// Colunas do formulário (0-indexed, pulando "Carimbo de data/hora"):
+// 0: carimbo, 1: idade, 2: frequência, 3: horas/dia, 4: plataforma,
+// 5: gênero escuta, 6: estuda, 7: influencia concentração, 8: momento dia,
+// 9: sentimento, 10: gênero personalidade
 
-function findKey(headers, fragment) {
-  const f = norm(fragment);
-  return headers.find(h => norm(h).includes(f)) || '';
-}
-
-function countKey(rows, key) {
+function colIdx(rows, idx) {
   const map = {};
   rows.forEach(r => {
-    (r[key]||'').split(',').map(v=>v.trim()).filter(Boolean).forEach(v => {
-      map[v] = (map[v]||0) + 1;
+    const val = Object.values(r)[idx] || '';
+    val.split(',').map(v => v.trim()).filter(Boolean).forEach(v => {
+      map[v] = (map[v] || 0) + 1;
     });
   });
   return map;
 }
 
 function topKey(map) {
-  return Object.entries(map).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—';
+  return Object.entries(map).sort((a,b) => b[1]-a[1])[0]?.[0] || '—';
 }
 
 function makeDoughnut(id, legendId, labels, data) {
   if (charts[id]) { charts[id].destroy(); delete charts[id]; }
-  const colors = labels.map((_,i) => PALETTE[i%PALETTE.length]);
-  const total = data.reduce((a,b)=>a+b,0);
+  const colors = labels.map((_,i) => PALETTE[i % PALETTE.length]);
+  const total = data.reduce((a,b) => a+b, 0);
   document.getElementById(legendId).innerHTML = labels.map((l,i) =>
     `<span class="legend-item"><span class="legend-dot" style="background:${colors[i]}"></span>${l} (${Math.round(data[i]/total*100)}%)</span>`
   ).join('');
@@ -182,14 +185,14 @@ function makeDoughnut(id, legendId, labels, data) {
     type: 'doughnut',
     data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 6 }] },
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
-      plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)` } } }
+      plugins: { legend:{display:false}, tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw/total*100)}%)` }}}
     }
   });
 }
 
 function makeHorizBars(containerId, map, maxItems) {
-  const sorted = Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0, maxItems||8);
-  const max = sorted[0]?.[1]||1;
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0, maxItems||8);
+  const max = sorted[0]?.[1] || 1;
   document.getElementById(containerId).innerHTML = sorted.map(([label,val],i) =>
     `<div class="bar-row">
       <div class="bar-label" title="${label}">${label}</div>
@@ -204,50 +207,49 @@ function makeHorizBars(containerId, map, maxItems) {
   });
 }
 
-function renderData(rows, headers) {
+function renderData(rows) {
   const total = rows.length;
   document.getElementById('m-total').textContent = total;
 
-  const freqKey = findKey(headers, 'frequencia');
-  const freq = countKey(rows, freqKey);
-  const everyday = Object.entries(freq).filter(([k])=>k.toLowerCase().includes('todo')).reduce((s,[,v])=>s+v,0);
+  // col 2: frequência
+  const freq = colIdx(rows, 2);
+  const everyday = Object.entries(freq).filter(([k]) => k.toLowerCase().includes('todo')).reduce((s,[,v]) => s+v, 0);
   document.getElementById('m-everyday').textContent = total ? Math.round(everyday/total*100)+'%' : '—';
 
-  const studyKey = findKey(headers, 'estuda');
-  const study = countKey(rows, studyKey);
-  const studyYes = Object.entries(study).filter(([k])=>k.toLowerCase().startsWith('sim')).reduce((s,[,v])=>s+v,0);
+  // col 6: estuda
+  const study = colIdx(rows, 6);
+  const studyYes = Object.entries(study).filter(([k]) => k.toLowerCase().startsWith('sim')).reduce((s,[,v]) => s+v, 0);
   document.getElementById('m-study').textContent = total ? Math.round(studyYes/total*100)+'%' : '—';
 
-  const genreKey = findKey(headers, 'genero musical voce mais escuta');
-  const genre = countKey(rows, genreKey);
+  // col 5: gênero mais ouvido
+  const genre = colIdx(rows, 5);
   document.getElementById('m-genre').textContent = topKey(genre);
   makeHorizBars('chartGenreWrap', genre, 8);
 
-  const platKey = findKey(headers, 'plataforma');
-  const platforms = countKey(rows, platKey);
+  // col 4: plataforma
+  const platforms = colIdx(rows, 4);
   document.getElementById('m-platform').textContent = topKey(platforms);
 
-  const hoursKey = findKey(headers, 'horas por dia');
-  const hours = countKey(rows, hoursKey);
-  const hSorted = Object.entries(hours).sort((a,b)=>b[1]-a[1]);
-  if (hSorted.length) makeDoughnut('chartHours','legend-hours',hSorted.map(e=>e[0]),hSorted.map(e=>e[1]));
+  // col 3: horas por dia
+  const hours = colIdx(rows, 3);
+  const hSorted = Object.entries(hours).sort((a,b) => b[1]-a[1]);
+  if (hSorted.length) makeDoughnut('chartHours','legend-hours', hSorted.map(e=>e[0]), hSorted.map(e=>e[1]));
 
-  const feelKey = findKey(headers, 'sentimento');
-  const feeling = countKey(rows, feelKey);
-  const fSorted = Object.entries(feeling).sort((a,b)=>b[1]-a[1]);
-  if (fSorted.length) makeDoughnut('chartFeeling','legend-feeling',fSorted.map(e=>e[0]),fSorted.map(e=>e[1]));
+  // col 9: sentimento
+  const feeling = colIdx(rows, 9);
+  const fSorted = Object.entries(feeling).sort((a,b) => b[1]-a[1]);
+  if (fSorted.length) makeDoughnut('chartFeeling','legend-feeling', fSorted.map(e=>e[0]), fSorted.map(e=>e[1]));
 
-  const momentKey = findKey(headers, 'momentos do dia');
-  const moment = countKey(rows, momentKey);
+  // col 8: momento do dia
+  const moment = colIdx(rows, 8);
   makeHorizBars('chartMomentWrap', moment, 6);
 
-  const personKey = findKey(headers, 'personalidade');
-  const person = countKey(rows, personKey);
+  // col 10: personalidade
+  const person = colIdx(rows, 10);
   makeHorizBars('chartPersonWrap', person, 6);
 
   const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   document.getElementById('lastUpdated').innerHTML = `Última atualização: <span style="color:#5cfcca">${now}</span> · ${total} resposta${total!==1?'s':''}`;
-  document.getElementById('errorBox').style.display = 'none';
 }
 
 async function loadData() {
@@ -255,30 +257,23 @@ async function loadData() {
   btn.classList.add('loading');
   document.getElementById('lastUpdated').textContent = 'Carregando...';
 
-  const urls = buildUrls();
-  let lastError = '';
-
-  for (const url of urls) {
+  for (const proxy of PROXIES) {
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const url = proxy(BASE_URL);
+      const res = await fetch(url + (url.includes('?') && !url.includes('nocache') ? '&nocache=' : '?nocache=') + Date.now(), { cache:'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      if (!text.includes(',')) throw new Error('Resposta inválida');
-      const { headers, rows } = parseCSV(text);
-      renderData(rows, headers);
+      if (!text.includes(',')) throw new Error('CSV inválido');
+      const { rows } = parseCSV(text);
+      renderData(rows);
       btn.classList.remove('loading');
       return;
     } catch(e) {
-      lastError = e.message;
-      console.warn('Tentativa falhou:', url, e.message);
+      console.warn('Proxy falhou:', e.message);
     }
   }
 
-  // Todas falharam
-  const box = document.getElementById('errorBox');
-  box.style.display = 'block';
-  box.textContent = `Não foi possível carregar os dados. Abra este arquivo em um servidor local ou use o Chrome com CORS desativado. (${lastError})`;
-  document.getElementById('lastUpdated').textContent = 'Erro ao carregar';
+  document.getElementById('lastUpdated').textContent = 'Erro ao carregar dados.';
   btn.classList.remove('loading');
 }
 
